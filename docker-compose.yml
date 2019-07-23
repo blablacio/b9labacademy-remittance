@@ -1,0 +1,20 @@
+version: '3.7'
+
+services:
+  ganache:
+    image: trufflesuite/ganache-cli
+    container_name: ganache
+    command: -v
+    ports:
+      - 8545:8545
+  
+  remittance-tests:
+    build: .
+    image: remittance-tests
+    container_name: remittance-tests
+    entrypoint: npx truffle test --network remittance
+    depends_on:
+      - ganache
+    volumes:
+      - /remittance/node_modules
+      - .:/remittance
