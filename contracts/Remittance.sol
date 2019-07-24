@@ -4,32 +4,28 @@ import "openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "./Pausable.sol";
 
 contract Remittance is Pausable {
-    using SafeMath for uint256;
+    using SafeMath for uint;
 
-    uint256 public deadlineDelta;
-    uint32 public commission;
+    uint public commission;
 
     struct Payment {
-        uint256 amount;
+        uint amount;
         address payable payer;
-        uint256 expires;
+        uint expires;
     }
     mapping (bytes32 => Payment) public payments;
 
-    event LogDeposited(address indexed payer, uint256 amount);
-    event LogClaimed(address indexed intermediary, uint256 amount);
-    event LogRefunded(address indexed payer, uint256 amount);
+    event LogDeposited(address indexed payer, uint amount);
+    event LogClaimed(address indexed intermediary, uint amount);
+    event LogRefunded(address indexed payer, uint amount);
+    event LogMessage(bytes32 message);
+    event LogMessageA(address who);
 
-    constructor(uint256 _deadlineDelta, uint32 _commission, bool _paused) Pausable(_paused) public {
-        deadlineDelta = _deadlineDelta;
+    constructor(uint _commission, bool _paused) Pausable(_paused) public {
         commission = _commission;
     }
 
-    function changeDeadlineDelta(uint256 newDeadlineDelta) external onlyOwner {
-        deadlineDelta = newDeadlineDelta;
-    }
-
-    function changeCommission(uint32 newCommission) external onlyOwner {
+    function changeCommission(uint newCommission) external onlyOwner {
         commission = newCommission;
     }
 
@@ -38,24 +34,41 @@ contract Remittance is Pausable {
         _;
     }
 
+    function generatePasswordHash(
+        bytes32 payeePassword,
+        bytes32 intermediaryPassword
+    ) public view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                payeePassword,
+                intermediaryPassword,
+                address(this)
+            )
+        );
+    }
+
     function deposit(
         address intermediary,
-        bytes32 password,
-        uint32 expires
+        bytes32 hashedPassword,
+        uint expires
     ) external payable whenAlive whenRunning coversCommission returns (bytes32) {
+        require(intermediary != address(0), 'Invalid intermediary');
+        require(hashedPassword != '', 'Invalid password');
+        require(expires < 86400 * 30, 'Expiry too far in the future');
+
         bytes32 id = keccak256(
             abi.encode(
-                password,
-                intermediary
+                intermediary,
+                hashedPassword
             )
         );
 
-        require(payments[id].amount == 0, 'Duplicate payment');
+        require(payments[id].payer == address(0), 'This password has already been used!');
 
         payments[id] = Payment(
-            msg.value - commission,
+            msg.value.sub(commission),
             msg.sender,
-            now + expires
+            now.add(expires)
         );
 
         emit LogDeposited(msg.sender, msg.value);
@@ -64,25 +77,25 @@ contract Remittance is Pausable {
     }
 
     function claim(
-        bytes32 password
+        bytes32 payeePassword,
+        bytes32 intermediaryPassword
     ) external whenAlive {
         bytes32 id = keccak256(
             abi.encode(
-                password,
-                msg.sender
+                msg.sender,
+                this.generatePasswordHash(payeePassword, intermediaryPassword)
             )
         );
 
-        Payment memory payment = payments[id];
+        uint amount = payments[id].amount;
 
-        require(payment.amount > 0, 'Wrong credentials or deposit already claimed');
-        require(payment.expires > now, 'Deposit already expired');
+        require(amount > 0, 'Wrong credentials or deposit already claimed');
 
-        delete payments[id];
+        payments[id].amount = 0;
 
-        emit LogClaimed(msg.sender, payment.amount);
+        emit LogClaimed(msg.sender, amount);
 
-        msg.sender.transfer(payment.amount);
+        msg.sender.transfer(amount);
     }
 
     function refund(
@@ -92,9 +105,8 @@ contract Remittance is Pausable {
 
         require(msg.sender == payment.payer, 'Only payer allowed');
         require(payment.expires < now, 'Deposit has not yet expired');
-        require(payment.expires.add(deadlineDelta) > now, 'Refund deadline has already passed');
 
-        delete payments[id];
+        payments[id].amount = 0;
 
         emit LogRefunded(msg.sender, payment.amount);
 
