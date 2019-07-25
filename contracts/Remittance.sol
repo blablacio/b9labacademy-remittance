@@ -7,7 +7,7 @@ contract Remittance is Pausable {
     using SafeMath for uint;
 
     uint public commission;
-    uint public constant defaultExpiry = 86400 * 30;
+    uint public constant defaultExpiry = 30 days;
 
     struct Payment {
         uint amount;
@@ -19,18 +19,16 @@ contract Remittance is Pausable {
     event LogDeposited(address indexed payer, uint amount);
     event LogClaimed(address indexed intermediary, uint amount);
     event LogRefunded(address indexed payer, uint amount);
+    event LogCommissionChanged(address indexed who, uint oldValue, uint newValue);
 
     constructor(uint _commission, bool _paused) Pausable(_paused) public {
         commission = _commission;
     }
 
     function changeCommission(uint newCommission) external onlyOwner {
-        commission = newCommission;
-    }
+        emit LogCommissionChanged(msg.sender, commission, newCommission);
 
-    modifier coversCommission {
-        require(msg.value > commission, 'You need to at least cover the commission');
-        _;
+        commission = newCommission;
     }
 
     function generatePasswordHash(
@@ -51,9 +49,9 @@ contract Remittance is Pausable {
     function deposit(
         bytes32 hashedPassword,
         uint expiry
-    ) external payable whenAlive whenRunning coversCommission returns (bytes32) {
+    ) external payable whenAlive whenRunning {
         require(hashedPassword != '', 'Invalid password');
-        require(expiry < defaultExpiry, 'Expiry must be less than 30 days');
+        require(expiry <= defaultExpiry, 'Expiry must be less than 30 days');
         require(
             payments[hashedPassword].payer == address(0),
             'This password has already been used!'
@@ -91,7 +89,7 @@ contract Remittance is Pausable {
 
         require(msg.sender == payment.payer, 'Only payer allowed');
         require(payment.amount > 0, 'Deposit already claimed');
-        require(payment.expiry < now, 'Deposit has not yet expired');
+        require(payment.expiry <= now, 'Deposit has not yet expired');
 
         payments[hashedPassword].amount = 0;
         payments[hashedPassword].expiry = 0;

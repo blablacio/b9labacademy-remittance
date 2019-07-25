@@ -2,41 +2,22 @@ const BN = web3.utils.BN;
 const Remittance = artifacts.require('./Remittance.sol');
 
 contract('Remittance', accounts => {
-  let remittance, passwords1, passwords2, passwords3, password1Hash, password2Hash, password3Hash;
+  let remittance, password1Hash, password2Hash, password3Hash;
   const [owner, payer1, intermediary1, payer2, intermediary2] = accounts;
 
   beforeEach('setup contract for each test', async () => {
     remittance = await Remittance.new(10000, false, { from: owner});
-    passwords1 = [
+    password1Hash = await remittance.generatePasswordHash(
       intermediary1,
-      web3.utils.toHex('blablacio'),
-      remittance.address
-    ];
-    password1Hash = web3.utils.keccak256(
-      web3.eth.abi.encodeParameters(
-        ['address', 'bytes32', 'address'],
-        passwords1
-      )
+      web3.utils.toHex('blablacio')
     );
-    passwords2 = [
+    password2Hash = await remittance.generatePasswordHash(
       intermediary1,
-      web3.utils.toHex('wrong'),
-      remittance.address
-    ];
-    password2Hash = web3.utils.keccak256(
-      ['address', 'bytes32', 'address'],
-      passwords2
+      web3.utils.toHex('wrong')
     );
-    passwords3 = [
+    password3Hash = await remittance.generatePasswordHash(
       intermediary2,
-      web3.utils.toHex('another'),
-      remittance.address
-    ];
-    password3Hash = web3.utils.keccak256(
-      web3.eth.abi.encodeParameters(
-        ['address', 'bytes32', 'address'],
-        passwords3
-      )
+      web3.utils.toHex('another')
     );
   });
 
@@ -98,7 +79,7 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.claim(
-        passwords1[1],
+        web3.utils.toHex('blablacio'),
         { from: intermediary2 }
       );
     } catch(err) {
@@ -107,7 +88,7 @@ contract('Remittance', accounts => {
     
     try {
       await remittance.claim(
-        passwords2[1],
+        web3.utils.toHex('wrong'),
         { from: intermediary1 }
       );
     } catch(err) {
@@ -117,7 +98,7 @@ contract('Remittance', accounts => {
     let intermediary1StartingBalance = new BN(await web3.eth.getBalance(intermediary1));
 
     let tx = await remittance.claim(
-      passwords1[1],
+      web3.utils.toHex('blablacio'),
       { from: intermediary1, gasPrice: 42 }
     );
 
@@ -289,7 +270,7 @@ contract('Remittance', accounts => {
     let intermediary1StartingBalance = new BN(await web3.eth.getBalance(intermediary1));
 
     let tx = await remittance.claim(
-      passwords1[1],
+      web3.utils.toHex('blablacio'),
       { from: intermediary1, gasPrice: 42 }
     );
 
@@ -332,7 +313,7 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.claim(
-        passwords1[1],
+        web3.utils.toHex('blablacio'),
         { from: intermediary1 }
       );
     } catch(err) {
