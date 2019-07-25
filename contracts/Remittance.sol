@@ -7,19 +7,18 @@ contract Remittance is Pausable {
     using SafeMath for uint;
 
     uint public commission;
+    uint public constant defaultExpiry = 86400 * 30;
 
     struct Payment {
         uint amount;
         address payable payer;
-        uint expires;
+        uint expiry;
     }
     mapping (bytes32 => Payment) public payments;
 
     event LogDeposited(address indexed payer, uint amount);
     event LogClaimed(address indexed intermediary, uint amount);
     event LogRefunded(address indexed payer, uint amount);
-    event LogMessage(bytes32 message);
-    event LogMessageA(address who);
 
     constructor(uint _commission, bool _paused) Pausable(_paused) public {
         commission = _commission;
@@ -35,63 +34,50 @@ contract Remittance is Pausable {
     }
 
     function generatePasswordHash(
-        bytes32 payeePassword,
-        bytes32 intermediaryPassword
+        address intermediaryAddress,
+        bytes32 payeePassword
     ) public view returns (bytes32) {
+        require(intermediaryAddress != address(0), 'Invalid intermediary');
+
         return keccak256(
             abi.encode(
+                intermediaryAddress,
                 payeePassword,
-                intermediaryPassword,
                 address(this)
             )
         );
     }
 
     function deposit(
-        address intermediary,
         bytes32 hashedPassword,
-        uint expires
+        uint expiry
     ) external payable whenAlive whenRunning coversCommission returns (bytes32) {
-        require(intermediary != address(0), 'Invalid intermediary');
         require(hashedPassword != '', 'Invalid password');
-        require(expires < 86400 * 30, 'Expiry too far in the future');
-
-        bytes32 id = keccak256(
-            abi.encode(
-                intermediary,
-                hashedPassword
-            )
+        require(expiry < defaultExpiry, 'Expiry must be less than 30 days');
+        require(
+            payments[hashedPassword].payer == address(0),
+            'This password has already been used!'
         );
 
-        require(payments[id].payer == address(0), 'This password has already been used!');
-
-        payments[id] = Payment(
+        payments[hashedPassword] = Payment(
             msg.value.sub(commission),
             msg.sender,
-            now.add(expires)
+            now.add(expiry)
         );
 
         emit LogDeposited(msg.sender, msg.value);
-
-        return id;
     }
 
     function claim(
-        bytes32 payeePassword,
-        bytes32 intermediaryPassword
+        bytes32 payeePassword
     ) external whenAlive {
-        bytes32 id = keccak256(
-            abi.encode(
-                msg.sender,
-                this.generatePasswordHash(payeePassword, intermediaryPassword)
-            )
-        );
-
-        uint amount = payments[id].amount;
+        bytes32 hashedPassword = this.generatePasswordHash(msg.sender, payeePassword);
+        uint amount = payments[hashedPassword].amount;
 
         require(amount > 0, 'Wrong credentials or deposit already claimed');
 
-        payments[id].amount = 0;
+        payments[hashedPassword].amount = 0;
+        payments[hashedPassword].expiry = 0;
 
         emit LogClaimed(msg.sender, amount);
 
@@ -99,14 +85,16 @@ contract Remittance is Pausable {
     }
 
     function refund(
-        bytes32 id
+        bytes32 hashedPassword
     ) external whenAlive {
-        Payment memory payment = payments[id];
+        Payment memory payment = payments[hashedPassword];
 
         require(msg.sender == payment.payer, 'Only payer allowed');
-        require(payment.expires < now, 'Deposit has not yet expired');
+        require(payment.amount > 0, 'Deposit already claimed');
+        require(payment.expiry < now, 'Deposit has not yet expired');
 
-        payments[id].amount = 0;
+        payments[hashedPassword].amount = 0;
+        payments[hashedPassword].expiry = 0;
 
         emit LogRefunded(msg.sender, payment.amount);
 

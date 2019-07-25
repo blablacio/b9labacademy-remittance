@@ -8,33 +8,33 @@ contract('Remittance', accounts => {
   beforeEach('setup contract for each test', async () => {
     remittance = await Remittance.new(10000, false, { from: owner});
     passwords1 = [
+      intermediary1,
       web3.utils.toHex('blablacio'),
-      web3.utils.toHex('oicalbalb'),
       remittance.address
     ];
     password1Hash = web3.utils.keccak256(
       web3.eth.abi.encodeParameters(
-        ['bytes32', 'bytes32', 'address'],
+        ['address', 'bytes32', 'address'],
         passwords1
       )
     );
     passwords2 = [
+      intermediary1,
       web3.utils.toHex('wrong'),
-      web3.utils.toHex('passw'),
       remittance.address
     ];
     password2Hash = web3.utils.keccak256(
-      ['bytes32', 'bytes32', 'address'],
-      passwords2  
+      ['address', 'bytes32', 'address'],
+      passwords2
     );
     passwords3 = [
+      intermediary2,
       web3.utils.toHex('another'),
-      web3.utils.toHex('passwdb'),
       remittance.address
     ];
     password3Hash = web3.utils.keccak256(
       web3.eth.abi.encodeParameters(
-        ['bytes32', 'bytes32', 'address'],
+        ['address', 'bytes32', 'address'],
         passwords3
       )
     );
@@ -55,7 +55,6 @@ contract('Remittance', accounts => {
   it('should not accept deposits smaller than the commission', async() => {
     try {
       await remittance.deposit(
-        intermediary1,
         password1Hash,
         86400 * 10,
         { from: payer1, value: 10000 }
@@ -66,31 +65,14 @@ contract('Remittance', accounts => {
   });
 
   it('should handle deposits properly', async() => {
-    let paymentHash = await remittance.deposit.call(
-      intermediary1,
-      password1Hash,
-      86400 * 3,
-      { from: payer1, value: 100000 }
-    );
-
     await remittance.deposit(
-      intermediary1,
       password1Hash,
       86400 * 3,
       { from: payer1, value: 100000 }
     );
 
-    let payment = await remittance.payments(paymentHash);
+    let payment = await remittance.payments(password1Hash);
 
-    assert.strictEqual(
-      paymentHash,
-      web3.utils.keccak256(
-        web3.eth.abi.encodeParameters(
-          ['address', 'bytes32'],
-          [intermediary1, password1Hash]
-        )
-      )
-    );
     assert.isTrue(
       payment.amount.eq(new BN(100000).sub(new BN(10000)))
     );
@@ -98,19 +80,17 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.deposit(
-        intermediary1,
         password2Hash,
         86400 * 42,
         { from: payer1, value: 100000 }
       );
     } catch(err) {
-      assert.strictEqual(err.reason, 'Expiry too far in the future');
+      assert.strictEqual(err.reason, 'Expiry must be less than 30 days');
     }
   });
 
   it('should enable only intermediaries to claim with correct password', async() => {
     await remittance.deposit(
-      intermediary1,
       password1Hash,
       86400 * 3,
       { from: payer1, value: 100000 }
@@ -118,7 +98,6 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.claim(
-        passwords1[0],
         passwords1[1],
         { from: intermediary2 }
       );
@@ -128,7 +107,6 @@ contract('Remittance', accounts => {
     
     try {
       await remittance.claim(
-        passwords2[0],
         passwords2[1],
         { from: intermediary1 }
       );
@@ -139,7 +117,6 @@ contract('Remittance', accounts => {
     let intermediary1StartingBalance = new BN(await web3.eth.getBalance(intermediary1));
 
     let tx = await remittance.claim(
-      passwords1[0],
       passwords1[1],
       { from: intermediary1, gasPrice: 42 }
     );
@@ -156,15 +133,7 @@ contract('Remittance', accounts => {
   });
 
   it('should enable only payer to get a refund after expiry', async() => {
-    let paymentHash = await remittance.deposit.call(
-      intermediary1,
-      password1Hash,
-      86400 * 14,
-      { from: payer1, value: 100000 }
-    );
-
     await remittance.deposit(
-      intermediary1,
       password1Hash,
       86400 * 14,
       { from: payer1, value: 100000 }
@@ -172,7 +141,7 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.refund(
-        paymentHash,
+        password1Hash,
         { from: payer2 }
       );
     } catch(err) {
@@ -181,22 +150,14 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.refund(
-        paymentHash,
+        password1Hash,
         { from: payer1 }
       );
     } catch(err) {
       assert.strictEqual(err.reason, 'Deposit has not yet expired');
     }
 
-    paymentHash = await remittance.deposit.call(
-      intermediary1,
-      password3Hash,
-      60,
-      { from: payer1, value: 100000 }
-    );
-
     await remittance.deposit(
-      intermediary1,
       password3Hash,
       60,
       { from: payer1, value: 100000 }
@@ -215,7 +176,7 @@ contract('Remittance', accounts => {
     let payer1StartingBalance = new BN(await web3.eth.getBalance(payer1));
 
     let tx = await remittance.refund(
-      paymentHash,
+      password3Hash,
       { from: payer1, gasPrice: 42 }
     );
 
@@ -232,7 +193,6 @@ contract('Remittance', accounts => {
 
   it('should not allow duplicate deposits', async() => {
     await remittance.deposit(
-      intermediary1,
       password1Hash,
       86400 * 14,
       { from: payer1, value: 100000 }
@@ -240,7 +200,6 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.deposit(
-        intermediary1,
         password1Hash,
         86400 * 14,
         { from: payer1, value: 100000 }
@@ -308,7 +267,6 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.deposit(
-        intermediary1,
         password1Hash,
         60,
         { from: payer1, value: 100000 }
@@ -321,15 +279,7 @@ contract('Remittance', accounts => {
   it('should allow claiming even when paused', async() => {
     assert.isFalse(await remittance.isPaused());
 
-    paymentHash = await remittance.deposit.call(
-      intermediary1,
-      password1Hash,
-      60,
-      { from: payer1, value: 100000 }
-    );
-
     await remittance.deposit(
-      intermediary1,
       password1Hash,
       60,
       { from: payer1, value: 100000 }
@@ -339,7 +289,6 @@ contract('Remittance', accounts => {
     let intermediary1StartingBalance = new BN(await web3.eth.getBalance(intermediary1));
 
     let tx = await remittance.claim(
-      passwords1[0],
       passwords1[1],
       { from: intermediary1, gasPrice: 42 }
     );
@@ -358,21 +307,13 @@ contract('Remittance', accounts => {
   it('should not allow deposits or claims when contract is killed', async() => {
     assert.isFalse(await remittance.isKilled());
 
-    paymentHash = await remittance.deposit.call(
-      intermediary1,
-      password1Hash,
-      60,
-      { from: payer1, value: 100000 }
-    );
-
     await remittance.deposit(
-      intermediary1,
       password1Hash,
       60,
       { from: payer1, value: 100000 }
     );
 
-    let payment = await remittance.payments(paymentHash);
+    let payment = await remittance.payments(password1Hash);
     assert.strictEqual(payment.payer, payer1);
     assert.isTrue(payment.amount.add(new BN(10000)).eq(new BN(100000)));
 
@@ -381,7 +322,6 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.deposit(
-        intermediary1,
         password1Hash,
         60,
         { from: payer1, value: 100000 }
@@ -392,7 +332,6 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.claim(
-        passwords1[0],
         passwords1[1],
         { from: intermediary1 }
       );
