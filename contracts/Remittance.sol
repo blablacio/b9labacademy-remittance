@@ -85,17 +85,18 @@ contract Remittance is Pausable {
     function refund(
         bytes32 hashedPassword
     ) external {
-        Payment memory payment = payments[hashedPassword];
+        require(msg.sender == payments[hashedPassword].payer, 'Only payer allowed');
+        require(payments[hashedPassword].expiry <= now, 'Deposit has not yet expired');
 
-        require(msg.sender == payment.payer, 'Only payer allowed');
-        require(payment.amount > 0, 'Deposit already claimed');
-        require(payment.expiry <= now, 'Deposit has not yet expired');
+        uint amount = payments[hashedPassword].amount;
+
+        require(amount > 0, 'Deposit already claimed');
 
         payments[hashedPassword].amount = 0;
         payments[hashedPassword].expiry = 0;
 
-        emit LogRefunded(msg.sender, payment.amount);
+        emit LogRefunded(msg.sender, amount);
 
-        msg.sender.transfer(payment.amount);
+        msg.sender.transfer(amount);
     }
 }
