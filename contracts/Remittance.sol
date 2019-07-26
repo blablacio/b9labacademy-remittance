@@ -68,7 +68,7 @@ contract Remittance is Pausable {
 
     function claim(
         bytes32 payeePassword
-    ) external whenAlive {
+    ) external {
         bytes32 hashedPassword = this.generatePasswordHash(msg.sender, payeePassword);
         uint amount = payments[hashedPassword].amount;
 
@@ -84,7 +84,7 @@ contract Remittance is Pausable {
 
     function refund(
         bytes32 hashedPassword
-    ) external whenAlive {
+    ) external {
         Payment memory payment = payments[hashedPassword];
 
         require(msg.sender == payment.payer, 'Only payer allowed');
@@ -96,6 +96,6 @@ contract Remittance is Pausable {
 
         emit LogRefunded(msg.sender, payment.amount);
 
-        payment.payer.transfer(payment.amount);
+        msg.sender.transfer(payment.amount);
     }
 }

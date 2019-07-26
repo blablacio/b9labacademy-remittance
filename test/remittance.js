@@ -1,4 +1,4 @@
-const BN = web3.utils.BN;
+const { BN, toHex } = web3.utils;
 const Remittance = artifacts.require('./Remittance.sol');
 
 contract('Remittance', accounts => {
@@ -9,15 +9,15 @@ contract('Remittance', accounts => {
     remittance = await Remittance.new(10000, false, { from: owner});
     password1Hash = await remittance.generatePasswordHash(
       intermediary1,
-      web3.utils.toHex('blablacio')
+      toHex('blablacio')
     );
     password2Hash = await remittance.generatePasswordHash(
       intermediary1,
-      web3.utils.toHex('wrong')
+      toHex('wrong')
     );
     password3Hash = await remittance.generatePasswordHash(
       intermediary2,
-      web3.utils.toHex('another')
+      toHex('another')
     );
   });
 
@@ -52,7 +52,7 @@ contract('Remittance', accounts => {
       { from: payer1, value: 100000 }
     );
 
-    let payment = await remittance.payments(password1Hash);
+    const payment = await remittance.payments(password1Hash);
 
     assert.isTrue(
       payment.amount.eq(new BN(100000).sub(new BN(10000)))
@@ -79,7 +79,7 @@ contract('Remittance', accounts => {
 
     try {
       await remittance.claim(
-        web3.utils.toHex('blablacio'),
+        toHex('blablacio'),
         { from: intermediary2 }
       );
     } catch(err) {
@@ -88,7 +88,7 @@ contract('Remittance', accounts => {
     
     try {
       await remittance.claim(
-        web3.utils.toHex('wrong'),
+        toHex('wrong'),
         { from: intermediary1 }
       );
     } catch(err) {
@@ -98,7 +98,7 @@ contract('Remittance', accounts => {
     let intermediary1StartingBalance = new BN(await web3.eth.getBalance(intermediary1));
 
     let tx = await remittance.claim(
-      web3.utils.toHex('blablacio'),
+      toHex('blablacio'),
       { from: intermediary1, gasPrice: 42 }
     );
 
@@ -266,11 +266,47 @@ contract('Remittance', accounts => {
       { from: payer1, value: 100000 }
     );
     await remittance.pause({ from: owner });
+    
+    assert.isTrue(await remittance.isPaused());
 
     let intermediary1StartingBalance = new BN(await web3.eth.getBalance(intermediary1));
 
     let tx = await remittance.claim(
-      web3.utils.toHex('blablacio'),
+      toHex('blablacio'),
+      { from: intermediary1, gasPrice: 42 }
+    );
+
+    let intermediary1EndingBalance = new BN(await web3.eth.getBalance(intermediary1));
+    let web3Tx = await web3.eth.getTransaction(tx.tx);
+
+    assert.isTrue(
+      intermediary1StartingBalance
+      .add(new BN(90000))
+      .sub(new BN(tx.receipt.gasUsed).mul(new BN(web3Tx.gasPrice)))
+      .eq(intermediary1EndingBalance)
+    );
+
+    assert.isFalse(await remittance.isKilled());
+  });
+
+  it('should allow claiming even when killed', async() => {
+    await remittance.deposit(
+      password1Hash,
+      60,
+      { from: payer1, value: 100000 }
+    );
+    await remittance.pause({ from: owner });
+
+    assert.isTrue(await remittance.isPaused());
+
+    await remittance.kill({ from: owner });
+
+    assert.isTrue(await remittance.isKilled());
+
+    let intermediary1StartingBalance = new BN(await web3.eth.getBalance(intermediary1));
+
+    let tx = await remittance.claim(
+      toHex('blablacio'),
       { from: intermediary1, gasPrice: 42 }
     );
 
@@ -285,7 +321,7 @@ contract('Remittance', accounts => {
     );
   });
 
-  it('should not allow deposits or claims when contract is killed', async() => {
+  it('should not allow deposits when contract is killed', async() => {
     assert.isFalse(await remittance.isKilled());
 
     await remittance.deposit(
@@ -294,7 +330,7 @@ contract('Remittance', accounts => {
       { from: payer1, value: 100000 }
     );
 
-    let payment = await remittance.payments(password1Hash);
+    const payment = await remittance.payments(password1Hash);
     assert.strictEqual(payment.payer, payer1);
     assert.isTrue(payment.amount.add(new BN(10000)).eq(new BN(100000)));
 
@@ -306,15 +342,6 @@ contract('Remittance', accounts => {
         password1Hash,
         60,
         { from: payer1, value: 100000 }
-      );
-    } catch(err) {
-      assert.strictEqual(err.reason, 'Contract killed');
-    }
-
-    try {
-      await remittance.claim(
-        web3.utils.toHex('blablacio'),
-        { from: intermediary1 }
       );
     } catch(err) {
       assert.strictEqual(err.reason, 'Contract killed');
